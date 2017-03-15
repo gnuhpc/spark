@@ -46,8 +46,8 @@ object TextSocketSource {
  * support for fault recovery and keeping all of the text read in memory forever.
  */
 class TextSocketSource(host: String, port: Int, includeTimestamp: Boolean, sqlContext: SQLContext)
-  extends Source with Logging
-{
+  extends Source with Logging {
+
   @GuardedBy("this")
   private var socket: Socket = null
 
@@ -116,8 +116,8 @@ class TextSocketSource(host: String, port: Int, includeTimestamp: Boolean, sqlCo
   /** Returns the data that is between the offsets (`start`, `end`]. */
   override def getBatch(start: Option[Offset], end: Offset): DataFrame = synchronized {
     val startOrdinal =
-      start.map(_.asInstanceOf[LongOffset]).getOrElse(LongOffset(-1)).offset.toInt + 1
-    val endOrdinal = end.asInstanceOf[LongOffset].offset.toInt + 1
+      start.flatMap(LongOffset.convert).getOrElse(LongOffset(-1)).offset.toInt + 1
+    val endOrdinal = LongOffset.convert(end).getOrElse(LongOffset(-1)).offset.toInt + 1
 
     // Internal buffer only holds the batches after lastOffsetCommitted
     val rawList = synchronized {
@@ -140,20 +140,19 @@ class TextSocketSource(host: String, port: Int, includeTimestamp: Boolean, sqlCo
   }
 
   override def commit(end: Offset): Unit = synchronized {
-    if (end.isInstanceOf[LongOffset]) {
-      val newOffset = end.asInstanceOf[LongOffset]
-      val offsetDiff = (newOffset.offset - lastOffsetCommitted.offset).toInt
-
-      if (offsetDiff < 0) {
-        sys.error(s"Offsets committed out of order: $lastOffsetCommitted followed by $end")
-      }
-
-      batches.trimStart(offsetDiff)
-      lastOffsetCommitted = newOffset
-    } else {
+    val newOffset = LongOffset.convert(end).getOrElse(
       sys.error(s"TextSocketStream.commit() received an offset ($end) that did not " +
         s"originate with an instance of this class")
+    )
+
+    val offsetDiff = (newOffset.offset - lastOffsetCommitted.offset).toInt
+
+    if (offsetDiff < 0) {
+      sys.error(s"Offsets committed out of order: $lastOffsetCommitted followed by $end")
     }
+
+    batches.trimStart(offsetDiff)
+    lastOffsetCommitted = newOffset
   }
 
   /** Stop this source. */
@@ -169,6 +168,8 @@ class TextSocketSource(host: String, port: Int, includeTimestamp: Boolean, sqlCo
       socket = null
     }
   }
+
+  override def toString: String = s"TextSocketSource[host: $host, port: $port]"
 }
 
 class TextSocketSourceProvider extends StreamSourceProvider with DataSourceRegister with Logging {

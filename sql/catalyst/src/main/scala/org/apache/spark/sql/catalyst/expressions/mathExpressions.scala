@@ -36,7 +36,7 @@ import org.apache.spark.unsafe.types.UTF8String
  * @param name The short name of the function
  */
 abstract class LeafMathExpression(c: Double, name: String)
-  extends LeafExpression with CodegenFallback {
+  extends LeafExpression with CodegenFallback with Serializable {
 
   override def dataType: DataType = DoubleType
   override def foldable: Boolean = true
@@ -1024,7 +1024,7 @@ abstract class RoundBase(child: Expression, scale: Expression,
     child.dataType match {
       case _: DecimalType =>
         val decimal = input1.asInstanceOf[Decimal]
-        if (decimal.changePrecision(decimal.precision, _scale, mode)) decimal else null
+        decimal.toPrecision(decimal.precision, _scale, mode).orNull
       case ByteType =>
         BigDecimal(input1.asInstanceOf[Byte]).setScale(_scale, mode).toByte
       case ShortType =>
